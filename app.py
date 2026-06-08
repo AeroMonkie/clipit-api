@@ -5,6 +5,10 @@ Upload a video, scan for copyrighted music, clip segments with audio removed.
 
 import os
 import json
+import time
+import hmac
+import base64
+import hashlib
 import tempfile
 import subprocess
 import shutil
@@ -17,6 +21,10 @@ CORS(app)
 
 # Configuration
 AUDD_API_TOKEN = os.environ.get('AUDD_API_TOKEN', '')
+ACRCLOUD_HOST = os.environ.get('ACRCLOUD_HOST', '').replace('https://', '').replace('http://', '').rstrip('/')
+ACRCLOUD_ACCESS_KEY = os.environ.get('ACRCLOUD_ACCESS_KEY', '')
+ACRCLOUD_ACCESS_SECRET = os.environ.get('ACRCLOUD_ACCESS_SECRET', '')
+MUSIC_RECOGNITION_PROVIDER = os.environ.get('MUSIC_RECOGNITION_PROVIDER', 'acrcloud').lower()
 
 # Chunk configuration for audio analysis
 CHUNK_DURATION = 12  # seconds per chunk
@@ -105,6 +113,64 @@ def recognize_with_audd(audio_path: str) -> dict:
     return response.json()
 
 
+def acrcloud_configured() -> bool:
+    """Return True when ACRCloud credentials are configured."""
+    return bool(ACRCLOUD_HOST and ACRCLOUD_ACCESS_KEY and ACRCLOUD_ACCESS_SECRET)
+
+
+def recognize_with_acrcloud(audio_path: str) -> dict:
+    """Recognize music using ACRCloud Identification API."""
+    if not acrcloud_configured():
+        return {'error': 'ACRCloud API credentials not configured'}
+
+    http_method = 'POST'
+    http_uri = '/v1/identify'
+    data_type = 'audio'
+    signature_version = '1'
+    timestamp = str(time.time())
+
+    string_to_sign = '\n'.join([
+        http_method,
+        http_uri,
+        ACRCLOUD_ACCESS_KEY,
+        data_type,
+        signature_version,
+        timestamp,
+    ])
+    signature = base64.b64encode(
+        hmac.new(
+            ACRCLOUD_ACCESS_SECRET.encode('ascii'),
+            string_to_sign.encode('ascii'),
+            hashlib.sha1,
+        ).digest()
+    ).decode('ascii')
+
+    with open(audio_path, 'rb') as f:
+        response = requests.post(
+            f'https://{ACRCLOUD_HOST}{http_uri}',
+            data={
+                'access_key': ACRCLOUD_ACCESS_KEY,
+                'sample_bytes': str(os.path.getsize(audio_path)),
+                'timestamp': timestamp,
+                'signature': signature,
+                'data_type': data_type,
+                'signature_version': signature_version,
+            },
+            files={'sample': (os.path.basename(audio_path), f, 'application/octet-stream')},
+            timeout=30,
+        )
+
+    try:
+        result = response.json()
+    except Exception:
+        return {'error': f'ACRCloud returned non-JSON response: HTTP {response.status_code}'}
+
+    if response.status_code >= 400:
+        return {'error': f'ACRCloud HTTP {response.status_code}', 'response': result}
+
+    return result
+
+
 def parse_audd_result(result: dict) -> dict:
     """Parse AudD API response."""
     if result.get('status') != 'success' or not result.get('result'):
@@ -119,6 +185,46 @@ def parse_audd_result(result: dict) -> dict:
         'label': track.get('label', 'Unknown'),
         'confidence': 100,
     }
+
+
+def parse_acrcloud_result(result: dict) -> dict:
+    """Parse ACRCloud Identification API response into ClipIt's song shape."""
+    status = result.get('status') or {}
+    if status.get('code') not in (0, '0'):
+        return None
+
+    music = (result.get('metadata') or {}).get('music') or []
+    if not music:
+        return None
+
+    track = music[0]
+    artists = [a.get('name') for a in track.get('artists', []) if a.get('name')]
+    album = track.get('album') or {}
+    release_date = track.get('release_date') or track.get('release_date_original') or 'Unknown'
+
+    return {
+        'title': track.get('title', 'Unknown'),
+        'artists': artists or ['Unknown'],
+        'album': album.get('name', 'Unknown') if isinstance(album, dict) else 'Unknown',
+        'release_date': release_date,
+        'label': (track.get('label') or 'Unknown'),
+        'confidence': track.get('score', 100),
+        'acrcloud_id': track.get('acrid'),
+    }
+
+
+def recognize_music(audio_path: str) -> dict:
+    """Recognize music with the configured provider."""
+    if MUSIC_RECOGNITION_PROVIDER == 'audd':
+        return recognize_with_audd(audio_path)
+    return recognize_with_acrcloud(audio_path)
+
+
+def parse_recognition_result(result: dict) -> dict:
+    """Parse recognition response from the configured provider."""
+    if MUSIC_RECOGNITION_PROVIDER == 'audd':
+        return parse_audd_result(result)
+    return parse_acrcloud_result(result)
 
 
 def format_timestamp(seconds: float) -> str:
@@ -187,8 +293,8 @@ def analyze_audio(audio_path: str, max_duration: float = None) -> dict:
             try:
                 extract_audio_chunk(audio_path, start_time, chunk_duration, chunk_path)
                 
-                result = recognize_with_audd(chunk_path)
-                parsed = parse_audd_result(result)
+                result = recognize_music(chunk_path)
+                parsed = parse_recognition_result(result)
                 
                 if parsed:
                     song_key = f"{parsed['title']}|{'|'.join(parsed['artists'])}"
@@ -399,9 +505,14 @@ def clip():
 @app.route('/api/config', methods=['GET'])
 def get_config():
     """Check API status."""
+    acr_ready = acrcloud_configured()
+    provider_ready = bool(AUDD_API_TOKEN) if MUSIC_RECOGNITION_PROVIDER == 'audd' else acr_ready
     return jsonify({
-        'status': 'ready',
-        'audd_configured': bool(AUDD_API_TOKEN),
+        'status': 'ready' if provider_ready else 'not_configured',
+        # Kept for the existing GoDaddy frontend, which checks audd_configured.
+        'audd_configured': provider_ready,
+        'acrcloud_configured': acr_ready,
+        'recognition_provider': MUSIC_RECOGNITION_PROVIDER,
         'max_file_size': '100MB',
         'supported_formats': ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', 'wmv', 'flv']
     })
