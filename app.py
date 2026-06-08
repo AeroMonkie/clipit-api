@@ -38,12 +38,12 @@ def get_int_env(name: str, default: int, *, minimum: int = 0) -> int:
         return default
 
 
-# Chunk configuration for audio analysis. ACRCloud is request-tolerant, so use a
-# tighter scan stride than the old AudD setup while keeping 12s samples for
-# recognition reliability.
+# Chunk configuration for audio analysis. Keep conservative defaults for a
+# synchronous request/response API; tighter settings can be enabled via Railway
+# env vars once the scan path is made asynchronous or parallelized safely.
 CHUNK_DURATION = get_int_env('CHUNK_DURATION', 12, minimum=5)  # seconds per chunk
-OVERLAP = get_int_env('OVERLAP', 8, minimum=0)  # seconds overlap between chunks
-MERGE_GAP = get_int_env('MERGE_GAP', 15, minimum=0)  # seconds gap tolerance for merging same-song detections
+OVERLAP = get_int_env('OVERLAP', 4, minimum=0)  # seconds overlap between chunks
+MERGE_GAP = get_int_env('MERGE_GAP', 30, minimum=0)  # seconds gap tolerance for merging same-song detections
 
 # Prevent bad env values from creating a zero/negative scan stride.
 if OVERLAP >= CHUNK_DURATION:
