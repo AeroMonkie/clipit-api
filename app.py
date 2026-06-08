@@ -12,6 +12,8 @@ import hashlib
 import tempfile
 import subprocess
 import shutil
+import threading
+import uuid
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import requests
@@ -44,10 +46,17 @@ def get_int_env(name: str, default: int, *, minimum: int = 0) -> int:
 CHUNK_DURATION = get_int_env('CHUNK_DURATION', 12, minimum=5)  # seconds per chunk
 OVERLAP = get_int_env('OVERLAP', 4, minimum=0)  # seconds overlap between chunks
 MERGE_GAP = get_int_env('MERGE_GAP', 30, minimum=0)  # seconds gap tolerance for merging same-song detections
+JOB_TTL_SECONDS = get_int_env('JOB_TTL_SECONDS', 3600, minimum=300)
 
 # Prevent bad env values from creating a zero/negative scan stride.
 if OVERLAP >= CHUNK_DURATION:
     OVERLAP = max(0, CHUNK_DURATION - 1)
+
+
+# In-memory scan jobs. This is intentionally simple: Railway restarts will clear
+# active jobs, but that is acceptable for this lightweight single-service tool.
+SCAN_JOBS = {}
+SCAN_JOBS_LOCK = threading.Lock()
 
 
 def get_media_duration(file_path: str) -> float:
@@ -287,7 +296,7 @@ def parse_timestamp(ts: str) -> float:
         raise ValueError(f"Invalid timestamp format: {ts}")
 
 
-def analyze_audio(audio_path: str, max_duration: float = None) -> dict:
+def analyze_audio(audio_path: str, max_duration: float = None, progress_callback=None) -> dict:
     """Analyze audio file for copyrighted music."""
     results = {
         'songs': [],
@@ -317,12 +326,20 @@ def analyze_audio(audio_path: str, max_duration: float = None) -> dict:
             current_time += CHUNK_DURATION - OVERLAP
         
         results['analysis_chunks'] = len(chunks)
+        if progress_callback:
+            progress_callback('Scanning audio chunks...', 0, len(chunks))
         
         # Analyze each chunk
         detected_songs = {}
         
         for i, (start_time, chunk_duration) in enumerate(chunks):
             chunk_path = os.path.join(temp_dir, f'chunk_{i}.mp3')
+            if progress_callback:
+                progress_callback(
+                    f"Scanning segment {i + 1} of {len(chunks)} ({format_timestamp(start_time)})...",
+                    i,
+                    len(chunks)
+                )
             
             try:
                 extract_audio_chunk(audio_path, start_time, chunk_duration, chunk_path)
@@ -353,6 +370,13 @@ def analyze_audio(audio_path: str, max_duration: float = None) -> dict:
                     
             except Exception as e:
                 results['errors'].append(f"Chunk {i} ({format_timestamp(start_time)}): {str(e)}")
+
+            if progress_callback:
+                progress_callback(
+                    f"Scanned segment {i + 1} of {len(chunks)}",
+                    i + 1,
+                    len(chunks)
+                )
         
         # Merge consecutive time ranges for each song
         for song_key, song_data in detected_songs.items():
@@ -402,6 +426,77 @@ def clip_video_no_audio(input_path: str, output_path: str, start_time: float, en
         raise Exception(f"ffmpeg failed: {result.stderr}")
 
 
+def prune_scan_jobs():
+    """Remove old completed/failed jobs from memory."""
+    cutoff = time.time() - JOB_TTL_SECONDS
+    with SCAN_JOBS_LOCK:
+        old_job_ids = [
+            job_id for job_id, job in SCAN_JOBS.items()
+            if job.get('status') in {'complete', 'error'} and job.get('updated_at', 0) < cutoff
+        ]
+        for job_id in old_job_ids:
+            SCAN_JOBS.pop(job_id, None)
+
+
+def update_scan_job(job_id: str, **updates):
+    """Thread-safe scan job update."""
+    with SCAN_JOBS_LOCK:
+        job = SCAN_JOBS.get(job_id)
+        if not job:
+            return
+        job.update(updates)
+        job['updated_at'] = time.time()
+
+
+def get_scan_job(job_id: str):
+    """Thread-safe scan job snapshot."""
+    with SCAN_JOBS_LOCK:
+        job = SCAN_JOBS.get(job_id)
+        return dict(job) if job else None
+
+
+def run_scan_job(job_id: str, filename: str, file_ext: str, video_path: str, audio_path: str, temp_dir: str, max_duration: float = None):
+    """Background worker for an uploaded scan."""
+    try:
+        update_scan_job(job_id, status='processing', message='Reading video metadata...', progress=5)
+        duration = get_media_duration(video_path)
+
+        update_scan_job(job_id, message='Extracting audio...', progress=10, video_duration=duration, video_duration_formatted=format_timestamp(duration))
+        has_audio = extract_audio_from_video(video_path, audio_path)
+
+        if not has_audio:
+            update_scan_job(job_id, status='complete', message='Complete', progress=100, result={
+                'filename': filename,
+                'video_duration': duration,
+                'video_duration_formatted': format_timestamp(duration),
+                'songs': [],
+                'analysis_chunks': 0,
+                'scan_mode': 'N/A',
+                'errors': ['Video has no audio track']
+            })
+            return
+
+        def on_progress(message: str, done: int, total: int):
+            # Reserve 0-15% for setup and 95-100% for merge/final response.
+            chunk_progress = 15
+            if total:
+                chunk_progress = 15 + int((done / total) * 80)
+            update_scan_job(job_id, message=message, progress=min(95, chunk_progress), chunks_done=done, chunks_total=total)
+
+        results = analyze_audio(audio_path, max_duration=max_duration, progress_callback=on_progress)
+        results['filename'] = filename
+        results['video_duration'] = duration
+        results['video_duration_formatted'] = format_timestamp(duration)
+
+        update_scan_job(job_id, status='complete', message='Complete', progress=100, result=results)
+
+    except Exception as e:
+        update_scan_job(job_id, status='error', message=str(e), error=str(e), progress=100)
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 @app.route('/')
 def index():
     return jsonify({'status': 'ClipIt API is running', 'version': '1.0'})
@@ -409,7 +504,13 @@ def index():
 
 @app.route('/api/scan', methods=['POST'])
 def scan():
-    """Scan uploaded video for copyrighted music."""
+    """Scan uploaded video for copyrighted music.
+
+    By default this preserves the original synchronous response contract. The
+    updated frontend sends async=1, which starts a background scan job and polls
+    /api/scan-status/<job_id> so long full-video scans do not time out.
+    """
+    prune_scan_jobs()
     
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
@@ -431,42 +532,95 @@ def scan():
     
     try:
         file.save(video_path)
-        
-        # Get video duration
-        duration = get_media_duration(video_path)
-        
-        # Extract audio
-        has_audio = extract_audio_from_video(video_path, audio_path)
-        
-        if not has_audio:
-            return jsonify({
-                'filename': file.filename,
-                'video_duration': duration,
-                'video_duration_formatted': format_timestamp(duration),
-                'songs': [],
-                'analysis_chunks': 0,
-                'scan_mode': 'N/A',
-                'errors': ['Video has no audio track']
-            })
-        
-        # Get max_duration parameter
+
         max_duration = request.form.get('max_duration', None)
         if max_duration:
             max_duration = float(max_duration)
-        
-        # Analyze audio
-        results = analyze_audio(audio_path, max_duration=max_duration)
-        results['filename'] = file.filename
-        results['video_duration'] = duration
-        results['video_duration_formatted'] = format_timestamp(duration)
-        
-        return jsonify(results)
+
+        async_requested = request.form.get('async') == '1' or request.form.get('async_scan') == '1'
+        if not async_requested:
+            duration = get_media_duration(video_path)
+            has_audio = extract_audio_from_video(video_path, audio_path)
+
+            if not has_audio:
+                return jsonify({
+                    'filename': file.filename,
+                    'video_duration': duration,
+                    'video_duration_formatted': format_timestamp(duration),
+                    'songs': [],
+                    'analysis_chunks': 0,
+                    'scan_mode': 'N/A',
+                    'errors': ['Video has no audio track']
+                })
+
+            results = analyze_audio(audio_path, max_duration=max_duration)
+            results['filename'] = file.filename
+            results['video_duration'] = duration
+            results['video_duration_formatted'] = format_timestamp(duration)
+            return jsonify(results)
+
+        job_id = uuid.uuid4().hex
+        now = time.time()
+        with SCAN_JOBS_LOCK:
+            SCAN_JOBS[job_id] = {
+                'job_id': job_id,
+                'status': 'queued',
+                'message': 'Queued...',
+                'progress': 0,
+                'filename': file.filename,
+                'created_at': now,
+                'updated_at': now,
+            }
+
+        thread = threading.Thread(
+            target=run_scan_job,
+            args=(job_id, file.filename, file_ext, video_path, audio_path, temp_dir, max_duration),
+            daemon=True,
+        )
+        thread.start()
+
+        return jsonify({
+            'job_id': job_id,
+            'status': 'queued',
+            'message': 'Scan started',
+            'status_url': f'/api/scan-status/{job_id}'
+        }), 202
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
-        
-    finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+        return jsonify({'error': str(e)}), 500
+
+    finally:
+        # Async workers own temp_dir cleanup after the scan completes.
+        if 'async_requested' in locals() and not async_requested:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@app.route('/api/scan-status/<job_id>', methods=['GET'])
+def scan_status(job_id):
+    """Return async scan job progress or final result."""
+    prune_scan_jobs()
+    job = get_scan_job(job_id)
+    if not job:
+        return jsonify({'error': 'Scan job not found or expired'}), 404
+
+    response = {
+        'job_id': job_id,
+        'status': job.get('status'),
+        'message': job.get('message', ''),
+        'progress': job.get('progress', 0),
+        'filename': job.get('filename'),
+        'chunks_done': job.get('chunks_done', 0),
+        'chunks_total': job.get('chunks_total', 0),
+    }
+    if job.get('video_duration_formatted'):
+        response['video_duration_formatted'] = job.get('video_duration_formatted')
+    if job.get('status') == 'complete':
+        response['result'] = job.get('result')
+    if job.get('status') == 'error':
+        response['error'] = job.get('error') or job.get('message')
+
+    return jsonify(response)
 
 
 @app.route('/api/clip', methods=['POST'])

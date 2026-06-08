@@ -1159,6 +1159,92 @@
             modeQuick.classList.remove('active');
         });
 
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        function updateScanProgress(message, progress, chunksDone, chunksTotal) {
+            const text = progressCard.querySelector('.progress-text');
+            const subtext = progressCard.querySelector('.progress-subtext');
+            if (text) text.textContent = message || 'Scanning for copyrighted music...';
+            if (subtext) {
+                let parts = [];
+                if (typeof progress === 'number') parts.push(progress + '%');
+                if (chunksTotal) parts.push(`${chunksDone || 0}/${chunksTotal} segments`);
+                parts.push('You can leave this tab open while the scan runs');
+                subtext.textContent = parts.join(' · ');
+            }
+        }
+
+        async function pollScanJob(jobId) {
+            while (true) {
+                const res = await fetch(`${API_BASE_URL}/api/scan-status/${jobId}`);
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.error || 'Unable to check scan status');
+                }
+
+                const status = await res.json();
+                updateScanProgress(status.message, status.progress, status.chunks_done, status.chunks_total);
+
+                if (status.status === 'complete') return status.result;
+                if (status.status === 'error') throw new Error(status.error || status.message || 'Scan failed');
+
+                await sleep(2500);
+            }
+        }
+
+        function renderScanResults(results) {
+            progressCard.classList.remove('visible');
+
+            // Update UI
+            step1Badge.textContent = '✓';
+            step1Badge.classList.add('done');
+            videoDuration.textContent = results.video_duration_formatted || '--:--';
+            chunksAnalyzed.textContent = results.analysis_chunks || 0;
+            scanModeResult.textContent = results.scan_mode || '--';
+
+            // Store songs for copy function
+            window._clipitSongs = results.songs || [];
+
+            if (results.songs && results.songs.length > 0) {
+                songsContainer.innerHTML = `
+                    <div class="songs-list">
+                        ${results.songs.map((song, i) => `
+                            <div class="song-card">
+                                <div class="song-header">
+                                    <div class="song-number">${i + 1}</div>
+                                    <div class="song-info song-copyable" onclick="copySong(${i})">
+                                        <div class="song-title">${escapeHtml(song.title)} \u2500 ${escapeHtml(song.artists.join(', '))}</div>
+                                        <div class="song-copy-hint">Click to copy</div>
+                                    </div>
+                                </div>
+                                <div class="timestamps-list">
+                                    ${song.time_ranges.map(r => `
+                                        <span class="timestamp-chip" onclick="fillTimestamp('${r.start}')">${r.start}</span>
+                                        <span class="timestamp-chip" onclick="fillTimestamp('${r.end}')">${r.end}</span>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } else {
+                songsContainer.innerHTML = `
+                    <div class="no-songs">
+                        <div class="no-songs-icon">
+                            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                        </div>
+                        <h3 class="no-songs-title">No copyrighted music detected</h3>
+                        <p class="no-songs-text">This video appears to be clean.</p>
+                    </div>
+                `;
+            }
+
+            resultsCard.classList.add('visible');
+            clipCard.classList.add('visible');
+        }
+
         // Scan
         scanBtn.addEventListener('click', async () => {
             if (!selectedFile) return;
@@ -1167,10 +1253,12 @@
             scanBtn.disabled = true;
             scanBtn.textContent = 'Scanning...';
             progressCard.classList.add('visible');
+            updateScanProgress('Uploading video and starting scan...', 0, 0, 0);
 
             try {
                 const formData = new FormData();
                 formData.append('file', selectedFile);
+                formData.append('async', '1');
                 if (currentMode === 'quick') {
                     formData.append('max_duration', '900');
                 }
@@ -1185,58 +1273,16 @@
                     throw new Error(err.error || 'Scan failed');
                 }
 
-                const results = await res.json();
+                const startResponse = await res.json();
+                if (startResponse.error) throw new Error(startResponse.error);
+
+                // New async API returns a job_id. Legacy API returned final results directly.
+                const results = startResponse.job_id
+                    ? await pollScanJob(startResponse.job_id)
+                    : startResponse;
+
                 if (results.error) throw new Error(results.error);
-
-                progressCard.classList.remove('visible');
-
-                // Update UI
-                step1Badge.textContent = '✓';
-                step1Badge.classList.add('done');
-                videoDuration.textContent = results.video_duration_formatted || '--:--';
-                chunksAnalyzed.textContent = results.analysis_chunks || 0;
-                scanModeResult.textContent = results.scan_mode || '--';
-
-                // Render songs
-                // Store songs for copy function
-                window._clipitSongs = results.songs || [];
-
-                if (results.songs && results.songs.length > 0) {
-                    songsContainer.innerHTML = `
-                        <div class="songs-list">
-                            ${results.songs.map((song, i) => `
-                                <div class="song-card">
-                                    <div class="song-header">
-                                        <div class="song-number">${i + 1}</div>
-                                        <div class="song-info song-copyable" onclick="copySong(${i})">
-                                            <div class="song-title">${escapeHtml(song.title)} \u2500 ${escapeHtml(song.artists.join(', '))}</div>
-                                            <div class="song-copy-hint">Click to copy</div>
-                                        </div>
-                                    </div>
-                                    <div class="timestamps-list">
-                                        ${song.time_ranges.map(r => `
-                                            <span class="timestamp-chip" onclick="fillTimestamp('${r.start}')">${r.start}</span>
-                                            <span class="timestamp-chip" onclick="fillTimestamp('${r.end}')">${r.end}</span>
-                                        `).join('')}
-                                    </div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    `;
-                } else {
-                    songsContainer.innerHTML = `
-                        <div class="no-songs">
-                            <div class="no-songs-icon">
-                                <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
-                            </div>
-                            <h3 class="no-songs-title">No copyrighted music detected</h3>
-                            <p class="no-songs-text">This video appears to be clean.</p>
-                        </div>
-                    `;
-                }
-
-                resultsCard.classList.add('visible');
-                clipCard.classList.add('visible');
+                renderScanResults(results);
 
             } catch (error) {
                 progressCard.classList.remove('visible');
@@ -1244,6 +1290,7 @@
             } finally {
                 scanBtn.disabled = false;
                 scanBtn.textContent = 'Scan for Music';
+                updateScanProgress('Scanning for copyrighted music...', null, 0, 0);
             }
         });
 
