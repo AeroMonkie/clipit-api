@@ -26,10 +26,28 @@ ACRCLOUD_ACCESS_KEY = os.environ.get('ACRCLOUD_ACCESS_KEY', '')
 ACRCLOUD_ACCESS_SECRET = os.environ.get('ACRCLOUD_ACCESS_SECRET', '')
 MUSIC_RECOGNITION_PROVIDER = os.environ.get('MUSIC_RECOGNITION_PROVIDER', '').lower()
 
-# Chunk configuration for audio analysis
-CHUNK_DURATION = 12  # seconds per chunk
-OVERLAP = 4  # seconds overlap between chunks
-MERGE_GAP = 30  # seconds gap tolerance for merging same-song detections
+def get_int_env(name: str, default: int, *, minimum: int = 0) -> int:
+    """Read a positive-ish integer env var with a safe fallback."""
+    raw = os.environ.get(name, '')
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+        return value if value >= minimum else default
+    except ValueError:
+        return default
+
+
+# Chunk configuration for audio analysis. ACRCloud is request-tolerant, so use a
+# tighter scan stride than the old AudD setup while keeping 12s samples for
+# recognition reliability.
+CHUNK_DURATION = get_int_env('CHUNK_DURATION', 12, minimum=5)  # seconds per chunk
+OVERLAP = get_int_env('OVERLAP', 8, minimum=0)  # seconds overlap between chunks
+MERGE_GAP = get_int_env('MERGE_GAP', 15, minimum=0)  # seconds gap tolerance for merging same-song detections
+
+# Prevent bad env values from creating a zero/negative scan stride.
+if OVERLAP >= CHUNK_DURATION:
+    OVERLAP = max(0, CHUNK_DURATION - 1)
 
 
 def get_media_duration(file_path: str) -> float:
@@ -530,6 +548,12 @@ def get_config():
         'audd_configured': provider_ready,
         'acrcloud_configured': acr_ready,
         'recognition_provider': provider,
+        'scan_settings': {
+            'chunk_duration_seconds': CHUNK_DURATION,
+            'overlap_seconds': OVERLAP,
+            'scan_step_seconds': CHUNK_DURATION - OVERLAP,
+            'merge_gap_seconds': MERGE_GAP,
+        },
         'max_file_size': '100MB',
         'supported_formats': ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', 'wmv', 'flv']
     })
