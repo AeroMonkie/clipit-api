@@ -23,6 +23,7 @@ CORS(app)
 
 # Configuration
 AUDD_API_TOKEN = os.environ.get('AUDD_API_TOKEN', '')
+AUDD_ENDPOINT = os.environ.get('AUDD_ENDPOINT', 'standard').lower()
 ACRCLOUD_HOST = os.environ.get('ACRCLOUD_HOST', '').replace('https://', '').replace('http://', '').rstrip('/')
 ACRCLOUD_ACCESS_KEY = os.environ.get('ACRCLOUD_ACCESS_KEY', '')
 ACRCLOUD_ACCESS_SECRET = os.environ.get('ACRCLOUD_ACCESS_SECRET', '')
@@ -140,6 +141,44 @@ def recognize_with_audd(audio_path: str) -> dict:
     return response.json()
 
 
+def recognize_with_audd_enterprise(audio_path: str, max_duration: float = None) -> dict:
+    """Recognize music using AudD Enterprise API.
+
+    The enterprise endpoint scans 12-second chunks server-side and can return
+    offsets for each detected track. Billing is still counted per scanned
+    12-second chunk, so quick scans pass a limit when max_duration is set.
+    """
+    if not AUDD_API_TOKEN:
+        return {'error': 'AudD API token not configured'}
+
+    data = {
+        'api_token': AUDD_API_TOKEN,
+        'accurate_offsets': 'true',
+    }
+    if max_duration:
+        # Enterprise counts/scans in 12-second chunks. Limit caps how many
+        # chunks the server recognizes from the start of the file.
+        data['limit'] = str(max(1, int((max_duration + 11) // 12)))
+
+    with open(audio_path, 'rb') as f:
+        response = requests.post(
+            'https://enterprise.audd.io/',
+            data=data,
+            files={'file': f},
+            timeout=300,
+        )
+
+    try:
+        result = response.json()
+    except Exception:
+        return {'error': f'AudD Enterprise returned non-JSON response: HTTP {response.status_code}'}
+
+    if response.status_code >= 400:
+        return {'error': f'AudD Enterprise HTTP {response.status_code}', 'response': result}
+
+    return result
+
+
 def acrcloud_configured() -> bool:
     """Return True when ACRCloud credentials are configured."""
     return bool(ACRCLOUD_HOST and ACRCLOUD_ACCESS_KEY and ACRCLOUD_ACCESS_SECRET)
@@ -230,6 +269,93 @@ def parse_audd_result(result: dict) -> dict:
     }
 
 
+def milliseconds_to_seconds(value, default: float = 0) -> float:
+    """Convert AudD offset fields to seconds.
+
+    AudD enterprise documents offset/start_offset/end_offset in milliseconds.
+    Be tolerant of missing/string values.
+    """
+    if value is None or value == '':
+        return default
+    try:
+        return float(value) / 1000.0
+    except (TypeError, ValueError):
+        return default
+
+
+def parse_audd_enterprise_result(result: dict, duration: float) -> dict:
+    """Parse AudD Enterprise response into ClipIt's scan result shape."""
+    scan = {
+        'songs': [],
+        'analysis_chunks': 0,
+        'errors': []
+    }
+
+    if result.get('status') != 'success':
+        if result.get('error'):
+            scan['errors'].append(str(result.get('error')))
+        return scan
+
+    rows = result.get('result') or []
+    if isinstance(rows, dict):
+        rows = [rows]
+    if not isinstance(rows, list):
+        return scan
+
+    scan['analysis_chunks'] = len(rows)
+    detected_songs = {}
+
+    for track in rows:
+        if not isinstance(track, dict):
+            continue
+        title = track.get('title', 'Unknown')
+        artist = track.get('artist', 'Unknown')
+        artists = [artist] if isinstance(artist, str) else (artist or ['Unknown'])
+        song_key = f"{title}|{'|'.join(artists)}"
+
+        fragment_start = milliseconds_to_seconds(track.get('offset'))
+        start_offset = milliseconds_to_seconds(track.get('start_offset'))
+        end_offset = milliseconds_to_seconds(track.get('end_offset'), CHUNK_DURATION)
+        start_seconds = max(0, fragment_start + start_offset)
+        end_seconds = min(duration, fragment_start + max(end_offset, start_offset + 1))
+
+        if song_key not in detected_songs:
+            detected_songs[song_key] = {
+                'title': title,
+                'artists': artists,
+                'album': track.get('album', 'Unknown'),
+                'release_date': track.get('release_date', 'Unknown'),
+                'label': track.get('label', 'Unknown'),
+                'confidence': track.get('score', 100),
+                'timestamps': [],
+                'time_ranges': []
+            }
+
+        detected_songs[song_key]['timestamps'].append(start_seconds)
+        detected_songs[song_key]['time_ranges'].append({
+            'start': format_timestamp(start_seconds),
+            'end': format_timestamp(end_seconds),
+            'start_seconds': start_seconds,
+            'end_seconds': end_seconds
+        })
+
+    for song_data in detected_songs.values():
+        merged_ranges = []
+        ranges = sorted(song_data['time_ranges'], key=lambda x: x['start_seconds'])
+        for r in ranges:
+            if merged_ranges and r['start_seconds'] <= merged_ranges[-1]['end_seconds'] + MERGE_GAP:
+                merged_ranges[-1]['end_seconds'] = max(merged_ranges[-1]['end_seconds'], r['end_seconds'])
+                merged_ranges[-1]['end'] = format_timestamp(merged_ranges[-1]['end_seconds'])
+            else:
+                merged_ranges.append(r.copy())
+
+        song_data['time_ranges'] = merged_ranges
+        scan['songs'].append(song_data)
+
+    scan['songs'].sort(key=lambda x: x['time_ranges'][0]['start_seconds'] if x['time_ranges'] else 0)
+    return scan
+
+
 def parse_acrcloud_result(result: dict) -> dict:
     """Parse ACRCloud Identification API response into ClipIt's song shape."""
     status = result.get('status') or {}
@@ -298,6 +424,9 @@ def parse_timestamp(ts: str) -> float:
 
 def analyze_audio(audio_path: str, max_duration: float = None, progress_callback=None) -> dict:
     """Analyze audio file for copyrighted music."""
+    if active_recognition_provider() == 'audd' and AUDD_ENDPOINT == 'enterprise':
+        return analyze_audio_with_audd_enterprise(audio_path, max_duration=max_duration, progress_callback=progress_callback)
+
     results = {
         'songs': [],
         'analysis_chunks': 0,
@@ -402,6 +531,42 @@ def analyze_audio(audio_path: str, max_duration: float = None, progress_callback
         shutil.rmtree(temp_dir, ignore_errors=True)
     
     return results
+
+
+def analyze_audio_with_audd_enterprise(audio_path: str, max_duration: float = None, progress_callback=None) -> dict:
+    """Analyze audio using AudD Enterprise in one server-side scan."""
+    results = {
+        'songs': [],
+        'analysis_chunks': 0,
+        'errors': []
+    }
+
+    try:
+        duration = get_media_duration(audio_path)
+        analyze_duration = duration
+        if max_duration and max_duration < duration:
+            analyze_duration = max_duration
+            results['scan_mode'] = f'First {format_timestamp(max_duration)}'
+        else:
+            results['scan_mode'] = 'Full video'
+
+        if progress_callback:
+            progress_callback('Submitting audio to AudD Enterprise...', 0, max(1, int((analyze_duration + 11) // 12)))
+
+        response = recognize_with_audd_enterprise(audio_path, max_duration=max_duration)
+        if response.get('error'):
+            results['errors'].append(str(response.get('error')))
+            return results
+
+        parsed = parse_audd_enterprise_result(response, duration=duration)
+        parsed['scan_mode'] = results['scan_mode']
+        if progress_callback:
+            progress_callback('AudD Enterprise scan complete', parsed.get('analysis_chunks', 0), parsed.get('analysis_chunks', 0))
+        return parsed
+
+    except Exception as e:
+        results['errors'].append(str(e))
+        return results
 
 
 def clip_video_no_audio(input_path: str, output_path: str, start_time: float, end_time: float):
@@ -702,6 +867,7 @@ def get_config():
         'audd_configured': provider_ready,
         'acrcloud_configured': acr_ready,
         'recognition_provider': provider,
+        'audd_endpoint': AUDD_ENDPOINT if provider == 'audd' else None,
         'scan_settings': {
             'chunk_duration_seconds': CHUNK_DURATION,
             'overlap_seconds': OVERLAP,
