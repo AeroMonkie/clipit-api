@@ -24,7 +24,7 @@ AUDD_API_TOKEN = os.environ.get('AUDD_API_TOKEN', '')
 ACRCLOUD_HOST = os.environ.get('ACRCLOUD_HOST', '').replace('https://', '').replace('http://', '').rstrip('/')
 ACRCLOUD_ACCESS_KEY = os.environ.get('ACRCLOUD_ACCESS_KEY', '')
 ACRCLOUD_ACCESS_SECRET = os.environ.get('ACRCLOUD_ACCESS_SECRET', '')
-MUSIC_RECOGNITION_PROVIDER = os.environ.get('MUSIC_RECOGNITION_PROVIDER', 'acrcloud').lower()
+MUSIC_RECOGNITION_PROVIDER = os.environ.get('MUSIC_RECOGNITION_PROVIDER', '').lower()
 
 # Chunk configuration for audio analysis
 CHUNK_DURATION = 12  # seconds per chunk
@@ -116,6 +116,22 @@ def recognize_with_audd(audio_path: str) -> dict:
 def acrcloud_configured() -> bool:
     """Return True when ACRCloud credentials are configured."""
     return bool(ACRCLOUD_HOST and ACRCLOUD_ACCESS_KEY and ACRCLOUD_ACCESS_SECRET)
+
+
+def active_recognition_provider() -> str:
+    """Choose the recognition provider without breaking existing deployments.
+
+    If MUSIC_RECOGNITION_PROVIDER is explicitly set, honor it. Otherwise prefer
+    ACRCloud when configured, and fall back to AudD while Railway env vars are
+    being cut over.
+    """
+    if MUSIC_RECOGNITION_PROVIDER in {'acrcloud', 'audd'}:
+        return MUSIC_RECOGNITION_PROVIDER
+    if acrcloud_configured():
+        return 'acrcloud'
+    if AUDD_API_TOKEN:
+        return 'audd'
+    return 'acrcloud'
 
 
 def recognize_with_acrcloud(audio_path: str) -> dict:
@@ -215,14 +231,14 @@ def parse_acrcloud_result(result: dict) -> dict:
 
 def recognize_music(audio_path: str) -> dict:
     """Recognize music with the configured provider."""
-    if MUSIC_RECOGNITION_PROVIDER == 'audd':
+    if active_recognition_provider() == 'audd':
         return recognize_with_audd(audio_path)
     return recognize_with_acrcloud(audio_path)
 
 
 def parse_recognition_result(result: dict) -> dict:
     """Parse recognition response from the configured provider."""
-    if MUSIC_RECOGNITION_PROVIDER == 'audd':
+    if active_recognition_provider() == 'audd':
         return parse_audd_result(result)
     return parse_acrcloud_result(result)
 
@@ -506,13 +522,14 @@ def clip():
 def get_config():
     """Check API status."""
     acr_ready = acrcloud_configured()
-    provider_ready = bool(AUDD_API_TOKEN) if MUSIC_RECOGNITION_PROVIDER == 'audd' else acr_ready
+    provider = active_recognition_provider()
+    provider_ready = bool(AUDD_API_TOKEN) if provider == 'audd' else acr_ready
     return jsonify({
         'status': 'ready' if provider_ready else 'not_configured',
         # Kept for the existing GoDaddy frontend, which checks audd_configured.
         'audd_configured': provider_ready,
         'acrcloud_configured': acr_ready,
-        'recognition_provider': MUSIC_RECOGNITION_PROVIDER,
+        'recognition_provider': provider,
         'max_file_size': '100MB',
         'supported_formats': ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', 'wmv', 'flv']
     })
