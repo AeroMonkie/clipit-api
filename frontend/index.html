@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClipIt — Scan & Clip Videos</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #fbfbfd;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #f5f5f7;
+            --bg-glass: rgba(255, 255, 255, 0.72);
+            --border: rgba(0, 0, 0, 0.08);
+            --border-strong: rgba(0, 0, 0, 0.12);
+            --text-primary: #1d1d1f;
+            --text-secondary: #6e6e73;
+            --text-tertiary: #86868b;
+            --accent: #0071e3;
+            --accent-hover: #0077ed;
+            --accent-light: rgba(0, 113, 227, 0.08);
+            --accent-secondary: #5e5ce6;
+            --accent-secondary-light: rgba(94, 92, 230, 0.08);
+            --success: #34c759;
+            --success-bg: rgba(52, 199, 89, 0.12);
+            --warning: #ff9500;
+            --warning-bg: rgba(255, 149, 0, 0.12);
+            --error: #ff3b30;
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+            --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.08);
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 20px;
+            --radius-xl: 28px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Navigation */
+        .nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            background: var(--bg-glass);
+            backdrop-filter: saturate(180%) blur(20px);
+            -webkit-backdrop-filter: saturate(180%) blur(20px);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .nav-inner {
+            max-width: 980px;
+            margin: 0 auto;
+            padding: 0 24px;
+            height: 52px;
+            display: flex;
+            align-items: center;
+        }
+
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+            color: var(--text-primary);
+        }
+
+        .nav-logo {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #0071e3 0%, #5e5ce6 100%);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .nav-logo svg {
+            width: 18px;
+            height: 18px;
+            fill: white;
+        }
+
+        .nav-title {
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        /* Hero */
+        .hero {
+            padding: 130px 0 60px;
+            text-align: center;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            background: var(--accent-light);
+            border-radius: 100px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--accent);
+            margin-bottom: 20px;
+        }
+
+        .hero-title {
+            font-size: clamp(36px, 7vw, 48px);
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+            margin-bottom: 12px;
+        }
+
+        .hero-subtitle {
+            font-size: 17px;
+            color: var(--text-secondary);
+            max-width: 480px;
+            margin: 0 auto;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border);
+            padding: 28px;
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .card-step {
+            width: 28px;
+            height: 28px;
+            background: var(--accent);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 600;
+            color: white;
+        }
+
+        .card-step.secondary {
+            background: var(--accent-secondary);
+        }
+
+        .card-step.done {
+            background: var(--success);
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        /* Upload Zone */
+        .upload-zone {
+            border: 2px dashed var(--border-strong);
+            border-radius: var(--radius-lg);
+            padding: 40px 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .upload-zone:hover {
+            border-color: var(--accent);
+            background: var(--accent-light);
+        }
+
+        .upload-zone.dragover {
+            border-color: var(--accent);
+            background: var(--accent-light);
+        }
+
+        .upload-zone.has-file {
+            border-style: solid;
+            border-color: var(--success);
+            background: var(--success-bg);
+        }
+
+        .upload-icon {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 12px;
+            background: var(--bg-tertiary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .upload-zone.has-file .upload-icon {
+            background: var(--success-bg);
+        }
+
+        .upload-icon svg {
+            width: 24px;
+            height: 24px;
+            fill: var(--text-secondary);
+        }
+
+        .upload-zone.has-file .upload-icon svg {
+            fill: var(--success);
+        }
+
+        .upload-title {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .upload-subtitle {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        /* File Info */
+        .file-info {
+            display: none;
+            align-items: center;
+            gap: 12px;
+            padding: 14px;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-md);
+            margin-bottom: 16px;
+        }
+
+        .file-info.visible {
+            display: flex;
+        }
+
+        .file-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #0071e3 0%, #5e5ce6 100%);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .file-icon svg {
+            width: 20px;
+            height: 20px;
+            fill: white;
+        }
+
+        .file-details {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-name {
+            font-size: 13px;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .file-size {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .file-remove {
+            width: 28px;
+            height: 28px;
+            border: none;
+            background: transparent;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .file-remove:hover {
+            background: rgba(255, 59, 48, 0.1);
+        }
+
+        .file-remove svg {
+            width: 16px;
+            height: 16px;
+            fill: var(--error);
+        }
+
+        /* Scan Mode Toggle */
+        .scan-options {
+            display: none;
+        }
+
+        .scan-options.visible {
+            display: block;
+        }
+
+        .option-label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .mode-toggle {
+            display: flex;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-md);
+            padding: 4px;
+            gap: 4px;
+            margin-bottom: 16px;
+        }
+
+        .mode-btn {
+            flex: 1;
+            padding: 10px 14px;
+            border: none;
+            border-radius: var(--radius-sm);
+            background: transparent;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .mode-btn:hover {
+            color: var(--text-primary);
+        }
+
+        .mode-btn.active {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            box-shadow: var(--shadow-sm);
+        }
+
+        /* Buttons */
+        .btn {
+            width: 100%;
+            border: none;
+            border-radius: var(--radius-md);
+            padding: 14px 24px;
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--accent-hover);
+        }
+
+        .btn-secondary {
+            background: var(--accent-secondary);
+            color: white;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: #6b69e8;
+        }
+
+        /* Progress */
+        .progress-card {
+            display: none;
+        }
+
+        .progress-card.visible {
+            display: block;
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .progress-content {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 2.5px solid var(--bg-tertiary);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .progress-text {
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .progress-subtext {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        /* Results */
+        .results-card {
+            display: none;
+        }
+
+        .results-card.visible {
+            display: block;
+            animation: slideUp 0.3s ease;
+        }
+
+        .results-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .meta-tag {
+            font-size: 12px;
+            color: var(--text-secondary);
+            background: var(--bg-tertiary);
+            padding: 5px 10px;
+            border-radius: 100px;
+        }
+
+        .meta-tag span {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* Song Cards */
+        .songs-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .song-card {
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-md);
+            padding: 16px;
+        }
+
+        .song-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .song-number {
+            width: 28px;
+            height: 28px;
+            background: var(--warning);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: white;
+        }
+
+        .song-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .song-title {
+            font-size: 14px;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .song-artist {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .song-copyable {
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: background 0.15s ease;
+        }
+
+        .song-copyable:hover {
+            background: rgba(0, 113, 227, 0.06);
+        }
+
+        .song-copyable:active {
+            background: rgba(0, 113, 227, 0.12);
+        }
+
+        .song-copy-hint {
+            font-size: 10px;
+            color: var(--text-tertiary);
+            margin-top: 2px;
+        }
+
+        .copy-toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: var(--text-primary);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 100px;
+            font-size: 13px;
+            font-weight: 500;
+            opacity: 0;
+            transition: all 0.25s ease;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        .copy-toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .timestamps-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .timestamp-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: var(--warning-bg);
+            border-radius: 100px;
+            padding: 5px 10px;
+            font-family: 'SF Mono', monospace;
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--warning);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .timestamp-chip:hover {
+            background: rgba(255, 149, 0, 0.24);
+            transform: scale(1.05);
+        }
+
+        .timestamp-chip:active {
+            transform: scale(0.97);
+        }
+
+        /* No Songs */
+        .no-songs {
+            text-align: center;
+            padding: 24px;
+        }
+
+        .no-songs-icon {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 12px;
+            background: var(--success-bg);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .no-songs-icon svg {
+            width: 24px;
+            height: 24px;
+            fill: var(--success);
+        }
+
+        .no-songs-title {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .no-songs-text {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        /* Clip Section */
+        .clip-card {
+            display: none;
+        }
+
+        .clip-card.visible {
+            display: block;
+            animation: slideUp 0.3s ease;
+        }
+
+        .timestamp-inputs {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .timestamp-group {
+            flex: 1;
+        }
+
+        .timestamp-group label {
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        .timestamp-input {
+            width: 100%;
+            background: var(--bg-tertiary);
+            border: 1px solid transparent;
+            border-radius: var(--radius-sm);
+            padding: 12px 14px;
+            font-family: 'SF Mono', monospace;
+            font-size: 15px;
+            color: var(--text-primary);
+            text-align: center;
+        }
+
+        .timestamp-input:focus {
+            outline: none;
+            border-color: var(--accent-secondary);
+            box-shadow: 0 0 0 3px var(--accent-secondary-light);
+        }
+
+        .timestamp-separator {
+            color: var(--text-tertiary);
+            padding-top: 20px;
+        }
+
+        .clip-note {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-bottom: 16px;
+            padding: 10px;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-sm);
+        }
+
+        /* Success */
+        .success-card {
+            display: none;
+            text-align: center;
+            padding: 32px;
+        }
+
+        .success-card.visible {
+            display: block;
+            animation: slideUp 0.3s ease;
+        }
+
+        .success-icon {
+            width: 56px;
+            height: 56px;
+            margin: 0 auto 16px;
+            background: var(--success-bg);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .success-icon svg {
+            width: 28px;
+            height: 28px;
+            fill: var(--success);
+        }
+
+        .success-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .success-text {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 20px;
+        }
+
+        /* Error */
+        .error-banner {
+            display: none;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 14px;
+            background: rgba(255, 59, 48, 0.08);
+            border: 1px solid rgba(255, 59, 48, 0.2);
+            border-radius: var(--radius-md);
+            margin-bottom: 16px;
+        }
+
+        .error-banner.visible {
+            display: flex;
+        }
+
+        .error-banner svg {
+            width: 18px;
+            height: 18px;
+            fill: var(--error);
+            flex-shrink: 0;
+        }
+
+        .error-text {
+            font-size: 13px;
+            color: var(--error);
+        }
+
+        /* Status Bar */
+        .status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-md);
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 16px;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--text-tertiary);
+        }
+
+        .status-dot.connected {
+            background: var(--success);
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 40px 0 24px;
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            .hero {
+                padding: 110px 0 50px;
+            }
+
+            .hero-title {
+                font-size: 32px;
+            }
+
+            .card {
+                padding: 20px;
+            }
+
+            .timestamp-inputs {
+                flex-direction: column;
+            }
+
+            .timestamp-separator {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="#" class="nav-brand">
+                <div class="nav-logo">
+                    <svg viewBox="0 0 24 24"><path d="M9.64 7.64c.23-.5.36-1.05.36-1.64 0-2.21-1.79-4-4-4S2 3.79 2 6s1.79 4 4 4c.59 0 1.14-.13 1.64-.36L10 12l-2.36 2.36C7.14 14.13 6.59 14 6 14c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4c0-.59-.13-1.14-.36-1.64L12 14l7 7h3v-1L9.64 7.64zM6 8c-1.1 0-2-.89-2-2s.9-2 2-2 2 .89 2 2-.9 2-2 2zm0 12c-1.1 0-2-.89-2-2s.9-2 2-2 2 .89 2 2-.9 2-2 2zm6-7.5c-.28 0-.5-.22-.5-.5s.22-.5.5-.5.5.22.5.5-.22.5-.5.5zM19 3l-6 6 2 2 7-7V3h-3z"/></svg>
+                </div>
+                <span class="nav-title">ClipIt</span>
+            </a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Hero -->
+        <section class="hero">
+            <div class="hero-badge">Video Tools</div>
+            <h1 class="hero-title">Scan. Clip. Clean.</h1>
+            <p class="hero-subtitle">Upload a video, detect copyrighted music, and export clips with audio removed.</p>
+        </section>
+
+        <!-- Error Banner -->
+        <div class="error-banner" id="errorBanner">
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+            <span class="error-text" id="errorText"></span>
+        </div>
+
+        <!-- Step 1: Upload -->
+        <div class="card" id="uploadCard">
+            <div class="card-header">
+                <div class="card-step" id="step1Badge">1</div>
+                <div class="card-title">Upload Video</div>
+            </div>
+
+            <div class="upload-zone" id="uploadZone">
+                <div class="upload-icon">
+                    <svg viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z"/></svg>
+                </div>
+                <div class="upload-title">Drop video file here</div>
+                <div class="upload-subtitle">MP4, MOV, AVI, MKV, WebM</div>
+                <input type="file" class="file-input" id="fileInput" accept=".mp4,.mov,.avi,.mkv,.webm,.m4v,.wmv,.flv,video/*">
+            </div>
+
+            <div class="file-info" id="fileInfo">
+                <div class="file-icon">
+                    <svg viewBox="0 0 24 24"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg>
+                </div>
+                <div class="file-details">
+                    <div class="file-name" id="fileName">video.mp4</div>
+                    <div class="file-size" id="fileSize">0 MB</div>
+                </div>
+                <button class="file-remove" id="fileRemove">
+                    <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/></svg>
+                </button>
+            </div>
+
+            <div class="scan-options" id="scanOptions">
+                <label class="option-label">Scan Mode</label>
+                <div class="mode-toggle">
+                    <button class="mode-btn active" id="modeQuick">First 15 min</button>
+                    <button class="mode-btn" id="modeFull">Full Video</button>
+                </div>
+                <button class="btn btn-primary" id="scanBtn">Scan for Music</button>
+            </div>
+
+            <div class="status-bar">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Checking connection...</span>
+            </div>
+        </div>
+
+        <!-- Scanning Progress -->
+        <div class="card progress-card" id="progressCard">
+            <div class="progress-content">
+                <div class="spinner"></div>
+                <div>
+                    <div class="progress-text">Scanning for copyrighted music...</div>
+                    <div class="progress-subtext">This may take a few minutes</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Results -->
+        <div class="card results-card" id="resultsCard">
+            <div class="card-header">
+                <div class="card-step done">✓</div>
+                <div class="card-title">Scan Complete</div>
+            </div>
+
+            <div class="results-meta">
+                <span class="meta-tag">Duration: <span id="videoDuration">--:--</span></span>
+                <span class="meta-tag">Segments: <span id="chunksAnalyzed">0</span></span>
+                <span class="meta-tag">Mode: <span id="scanModeResult">--</span></span>
+            </div>
+
+            <div id="songsContainer"></div>
+        </div>
+
+        <!-- Step 3: Clip -->
+        <div class="card clip-card" id="clipCard">
+            <div class="card-header">
+                <div class="card-step secondary">2</div>
+                <div class="card-title">Create Clip</div>
+            </div>
+
+            <div class="timestamp-inputs">
+                <div class="timestamp-group">
+                    <label>Start Time</label>
+                    <input type="text" class="timestamp-input" id="startTime" placeholder="0:00">
+                </div>
+                <span class="timestamp-separator">→</span>
+                <div class="timestamp-group">
+                    <label>End Time</label>
+                    <input type="text" class="timestamp-input" id="endTime" placeholder="1:30">
+                </div>
+            </div>
+
+            <div class="clip-note">
+                ⚠️ Audio will be removed from the exported clip
+            </div>
+
+            <button class="btn btn-secondary" id="clipBtn">Create Clip (No Audio)</button>
+        </div>
+
+        <!-- Clipping Progress -->
+        <div class="card progress-card" id="clipProgressCard">
+            <div class="progress-content">
+                <div class="spinner"></div>
+                <div>
+                    <div class="progress-text">Creating your clip...</div>
+                    <div class="progress-subtext">Removing audio and exporting</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Success -->
+        <div class="card success-card" id="successCard">
+            <div class="success-icon">
+                <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+            </div>
+            <h2 class="success-title">Clip Downloaded!</h2>
+            <p class="success-text">Your video clip has been saved without audio.</p>
+            <button class="btn btn-primary" id="startOverBtn">Start Over</button>
+        </div>
+
+        <footer class="footer">
+            Audio detection powered by ACRCloud · Video processing powered by FFmpeg
+        </footer>
+    </div>
+
+    <div class="copy-toast" id="copyToast">Copied!</div>
+
+    <script>
+        // ===========================================
+        // API Configuration - UPDATE THIS URL
+        // ===========================================
+        const API_BASE_URL = 'https://clipit-api-production.up.railway.app';
+
+        // DOM Elements
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const fileRemove = document.getElementById('fileRemove');
+        const scanOptions = document.getElementById('scanOptions');
+        const modeQuick = document.getElementById('modeQuick');
+        const modeFull = document.getElementById('modeFull');
+        const scanBtn = document.getElementById('scanBtn');
+        const uploadCard = document.getElementById('uploadCard');
+        const progressCard = document.getElementById('progressCard');
+        const resultsCard = document.getElementById('resultsCard');
+        const songsContainer = document.getElementById('songsContainer');
+        const videoDuration = document.getElementById('videoDuration');
+        const chunksAnalyzed = document.getElementById('chunksAnalyzed');
+        const scanModeResult = document.getElementById('scanModeResult');
+        const clipCard = document.getElementById('clipCard');
+        const startTime = document.getElementById('startTime');
+        const endTime = document.getElementById('endTime');
+        const clipBtn = document.getElementById('clipBtn');
+        const clipProgressCard = document.getElementById('clipProgressCard');
+        const successCard = document.getElementById('successCard');
+        const startOverBtn = document.getElementById('startOverBtn');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const errorBanner = document.getElementById('errorBanner');
+        const errorText = document.getElementById('errorText');
+        const step1Badge = document.getElementById('step1Badge');
+
+        let selectedFile = null;
+        let currentMode = 'quick';
+
+        // Check API
+        async function checkApi() {
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/config`);
+                const config = await res.json();
+                if (config.status === 'ready' && (config.acrcloud_configured || config.audd_configured)) {
+                    statusDot.classList.add('connected');
+                    statusText.textContent = 'Ready';
+                } else {
+                    statusText.textContent = 'API not configured';
+                }
+            } catch (e) {
+                statusText.textContent = 'Unable to connect';
+            }
+        }
+        checkApi();
+
+        // Utils
+        function formatFileSize(bytes) {
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function showError(msg) {
+            errorText.textContent = msg;
+            errorBanner.classList.add('visible');
+        }
+
+        function hideError() {
+            errorBanner.classList.remove('visible');
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // File handling
+        function handleFile(file) {
+            selectedFile = file;
+            fileName.textContent = file.name;
+            fileSize.textContent = formatFileSize(file.size);
+            uploadZone.classList.add('has-file');
+            uploadZone.style.display = 'none';
+            fileInfo.classList.add('visible');
+            scanOptions.classList.add('visible');
+            hideError();
+        }
+
+        function clearFile() {
+            selectedFile = null;
+            fileInput.value = '';
+            uploadZone.classList.remove('has-file');
+            uploadZone.style.display = '';
+            fileInfo.classList.remove('visible');
+            scanOptions.classList.remove('visible');
+        }
+
+        function resetAll() {
+            clearFile();
+            resultsCard.classList.remove('visible');
+            clipCard.classList.remove('visible');
+            successCard.classList.remove('visible');
+            progressCard.classList.remove('visible');
+            clipProgressCard.classList.remove('visible');
+            uploadCard.style.display = '';
+            step1Badge.textContent = '1';
+            step1Badge.classList.remove('done');
+            startTime.value = '';
+            endTime.value = '';
+        }
+
+        // Copy song name to clipboard
+        function copySong(idx) {
+            const song = window._clipitSongs[idx];
+            if (!song) return;
+            const text = song.title + ' \u2500 ' + song.artists.join(', ');
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('Copied: ' + text);
+            });
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('copyToast');
+            toast.textContent = msg;
+            toast.classList.add('show');
+            clearTimeout(window._toastTimeout);
+            window._toastTimeout = setTimeout(() => toast.classList.remove('show'), 2000);
+        }
+
+        // Fill clip timestamps from chip click
+        function fillTimestamp(timeValue) {
+            const s = document.getElementById('startTime');
+            const e = document.getElementById('endTime');
+            if (!s.value || (s.value && e.value)) {
+                // Empty or both filled: start fresh
+                s.value = timeValue;
+                e.value = '';
+                showToast('Start time: ' + timeValue);
+            } else {
+                // Start filled, end empty: fill end
+                e.value = timeValue;
+                clipCard.classList.add('visible');
+                clipCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                showToast('End time: ' + timeValue);
+            }
+        }
+
+        // Events
+        uploadZone.addEventListener('click', () => fileInput.click());
+        uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+        uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', (e) => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+        fileRemove.addEventListener('click', clearFile);
+        startOverBtn.addEventListener('click', resetAll);
+
+        // Mode toggle
+        modeQuick.addEventListener('click', () => {
+            currentMode = 'quick';
+            modeQuick.classList.add('active');
+            modeFull.classList.remove('active');
+        });
+        modeFull.addEventListener('click', () => {
+            currentMode = 'full';
+            modeFull.classList.add('active');
+            modeQuick.classList.remove('active');
+        });
+
+        // Scan
+        scanBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            hideError();
+            scanBtn.disabled = true;
+            scanBtn.textContent = 'Scanning...';
+            progressCard.classList.add('visible');
+
+            try {
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+                if (currentMode === 'quick') {
+                    formData.append('max_duration', '900');
+                }
+
+                const res = await fetch(`${API_BASE_URL}/api/scan`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.error || 'Scan failed');
+                }
+
+                const results = await res.json();
+                if (results.error) throw new Error(results.error);
+
+                progressCard.classList.remove('visible');
+
+                // Update UI
+                step1Badge.textContent = '✓';
+                step1Badge.classList.add('done');
+                videoDuration.textContent = results.video_duration_formatted || '--:--';
+                chunksAnalyzed.textContent = results.analysis_chunks || 0;
+                scanModeResult.textContent = results.scan_mode || '--';
+
+                // Render songs
+                // Store songs for copy function
+                window._clipitSongs = results.songs || [];
+
+                if (results.songs && results.songs.length > 0) {
+                    songsContainer.innerHTML = `
+                        <div class="songs-list">
+                            ${results.songs.map((song, i) => `
+                                <div class="song-card">
+                                    <div class="song-header">
+                                        <div class="song-number">${i + 1}</div>
+                                        <div class="song-info song-copyable" onclick="copySong(${i})">
+                                            <div class="song-title">${escapeHtml(song.title)} \u2500 ${escapeHtml(song.artists.join(', '))}</div>
+                                            <div class="song-copy-hint">Click to copy</div>
+                                        </div>
+                                    </div>
+                                    <div class="timestamps-list">
+                                        ${song.time_ranges.map(r => `
+                                            <span class="timestamp-chip" onclick="fillTimestamp('${r.start}')">${r.start}</span>
+                                            <span class="timestamp-chip" onclick="fillTimestamp('${r.end}')">${r.end}</span>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                } else {
+                    songsContainer.innerHTML = `
+                        <div class="no-songs">
+                            <div class="no-songs-icon">
+                                <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                            </div>
+                            <h3 class="no-songs-title">No copyrighted music detected</h3>
+                            <p class="no-songs-text">This video appears to be clean.</p>
+                        </div>
+                    `;
+                }
+
+                resultsCard.classList.add('visible');
+                clipCard.classList.add('visible');
+
+            } catch (error) {
+                progressCard.classList.remove('visible');
+                showError(error.message);
+            } finally {
+                scanBtn.disabled = false;
+                scanBtn.textContent = 'Scan for Music';
+            }
+        });
+
+        // Clip
+        clipBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            const start = startTime.value.trim();
+            const end = endTime.value.trim();
+
+            if (!start || !end) {
+                showError('Please enter start and end times');
+                return;
+            }
+
+            hideError();
+            clipBtn.disabled = true;
+            clipBtn.textContent = 'Creating...';
+            clipProgressCard.classList.add('visible');
+
+            try {
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+                formData.append('start', start);
+                formData.append('end', end);
+
+                const res = await fetch(`${API_BASE_URL}/api/clip`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.error || 'Clip failed');
+                }
+
+                const blob = await res.blob();
+                const contentDisposition = res.headers.get('Content-Disposition');
+                let downloadName = 'clip_noaudio.mp4';
+                if (contentDisposition) {
+                    const match = contentDisposition.match(/filename="?([^"]+)"?/);
+                    if (match) downloadName = match[1];
+                }
+
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = downloadName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+
+                clipProgressCard.classList.remove('visible');
+                uploadCard.style.display = 'none';
+                resultsCard.classList.remove('visible');
+                clipCard.classList.remove('visible');
+                successCard.classList.add('visible');
+
+            } catch (error) {
+                clipProgressCard.classList.remove('visible');
+                showError(error.message);
+            } finally {
+                clipBtn.disabled = false;
+                clipBtn.textContent = 'Create Clip (No Audio)';
+            }
+        });
+    </script>
+</body>
+</html>
